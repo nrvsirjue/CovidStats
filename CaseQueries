@@ -1,0 +1,146 @@
+SELECT * FROM CovidDeaths
+order by 3,4;
+
+--SELECT * FROM CovidVaccinations
+--order by 3,4 (Location, Date)
+
+--SELECT data going to be used
+
+SELECT LOCATION, FULL_DATE, TOTAL_CASES, NEW_CASES, TOTAL_DEATHS, POPULATION
+FROM CovidDeaths
+ORDER BY 1,2;
+
+--Looking at total cases vs. total deaths --> What's the percentage of death based on total population
+--Shows likelihood of death if covid is contracted per country:
+SELECT LOCATION, FULL_DATE, TOTAL_CASES, TOTAL_DEATHS, (TOTAL_DEATHS/TOTAL_CASES)*100 as DeathPercentage
+FROM CovidDeaths
+WHERE LOCATION like '%States%'
+ORDER BY 1,2;
+
+--Look at total cases vs. population
+--Shows what percentage of population contracted covid
+SELECT LOCATION, FULL_DATE, TOTAL_CASES, POPULATION, (TOTAL_CASES/POPULATION)*100 AS CasePercentage
+FROM CovidDeaths
+WHERE LOCATION LIKE '%States%'
+ORDER BY 1,2;
+--Finding: About 10% of people as of April 2021 contracted Covid in the US.
+
+--Looking at the countries with the highest infection rate, compared to the population
+--Order by descending percentage, where the percentage is not equal to a null percentage
+SELECT continent, MAX(TOTAL_CASES) as HighestInfectionCount, POPULATION, MAX((TOTAL_CASES/POPULATION))*100 AS CasePercentagePerLocation
+FROM CovidDeaths
+GROUP BY continent, POPULATION
+HAVING MAX((TOTAL_CASES/POPULATION)) IS NOT NULL
+ORDER BY CasePercentagePerLocation DESC;
+
+--Looking at the countries with the highest infection rate, including their death percentages
+SELECT continent, POPULATION, MAX(TOTAL_CASES) as HighestInfectionCount, MAX((TOTAL_CASES/POPULATION))*100 AS CasePercentagePerLocation, MAX(TOTAL_DEATHS) as TotalDeaths, MAX((TOTAL_DEATHS/TOTAL_CASES))*100 as DeathPercentage
+FROM CovidDeaths
+GROUP BY continent, POPULATION
+HAVING MAX((TOTAL_CASES/POPULATION)) IS NOT NULL
+ORDER BY CasePercentagePerLocation DESC;
+
+--Looking at the countries with the highest death count per population
+SELECT continent, MAX(TOTAL_DEATHS) as TotalDeathCount
+FROM CovidDeaths
+WHERE total_deaths IS NOT NULL
+    AND continent IS NOT NULL
+GROUP BY CONTINENT
+ORDER BY TotalDeathCount DESC;
+
+-- Looking at the location (by continent) with the highest death count per population
+SELECT continent, MAX(TOTAL_DEATHS) as TotalDeathCount
+FROM CovidDeaths
+WHERE total_deaths IS NOT NULL
+    AND continent IS NULL
+GROUP BY CONTINENT
+ORDER BY TotalDeathCount DESC;
+
+--Looking at the content with the highest death count
+SELECT continent, MAX(TOTAL_DEATHS) as TotalDeathCount
+FROM CovidDeaths
+WHERE total_deaths IS NOT NULL 
+    AND continent IS NOT NULL
+GROUP BY continent
+ORDER BY TotalDeathCount DESC;
+
+--Breaking this up by global figures - world view
+SELECT SUM(NEW_CASES) AS Total_Cases, SUM(NEW_DEATHS) as Total_Deaths, SUM(NEW_DEATHS)/SUM(NEW_CASES)*100 as DeathPercentage
+FROM CovidDeaths
+WHERE continent IS NOT NULL
+--GROUP BY full_date
+ORDER BY 1,2;
+
+
+--Joining the two tables by location and date
+SELECT *
+FROM coviddeaths dea
+JOIN covidvaccinations vac
+    ON dea.location = vac.location
+    AND dea.full_date = vac.vaccine_date;
+    
+--Looking at the total population in the world vs vaccinations using CTE
+With PopVsVac
+AS
+(
+SELECT 
+    dea.continent, 
+    dea.location, 
+    dea.full_date, 
+    dea.population, 
+    vac.new_vaccinations, 
+    SUM(vac.new_vaccinations) OVER (
+        Partition by dea.location ORDER BY dea.full_date
+        ) AS total_vaccines_per_day
+FROM coviddeaths dea
+JOIN covidvaccinations vac
+    ON dea.location = vac.location
+    AND dea.full_date = vac.vaccine_date
+WHERE dea.continent IS NOT NULL
+)
+SELECT 
+    continent, 
+    location, 
+    full_date, 
+    population, 
+    new_vaccinations, 
+    total_vaccines_per_day,
+    (total_vaccines_per_day / population) * 100 AS percent_vaccinated
+FROM PopVsVac
+;
+
+--Breaking it down using a temp table and by continent
+DROP TABLE IF EXISTS PopVsVacTemp
+CREATE GLOBAL TEMPORARY TABLE PopVsVacTemp (
+    Continent VARCHAR2(255),
+    Location VARCHAR2(255),
+    Temp_Date DATE,
+    Population FLOAT,
+    New_Vaccinations FLOAT,
+    Total_Vaccinations_Per_Day FLOAT
+);
+
+INSERT INTO PopVsVacTemp
+SELECT
+    dea.continent,
+    dea.location,
+    dea.full_date,
+    dea.population,
+    vac.new_vaccinations,
+    SUM(vac.new_vaccinations) OVER (
+        PARTITION BY dea.location
+        ORDER BY dea.full_date
+    ) AS total_vaccines_per_day
+FROM coviddeaths dea
+JOIN covidvaccinations vac
+    ON dea.location = vac.location
+    AND dea.full_date = vac.vaccine_date
+WHERE dea.continent IS NOT NULL;
+
+SELECT 
+    Continent,
+    Location,
+    MAX((Total_Vaccinations_Per_Day / Population) * 100) AS peak_percent_vaccinated
+FROM PopVsVacTemp
+GROUP BY continent, location
+ORDER BY continent, peak_percent_vaccinated DESC;
