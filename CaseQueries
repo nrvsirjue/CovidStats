@@ -144,3 +144,53 @@ SELECT
 FROM PopVsVacTemp
 GROUP BY continent, location
 ORDER BY continent, peak_percent_vaccinated DESC;
+
+CREATE TABLE MostVaccinatedCountries AS
+SELECT 
+    continent,
+    location,
+    MAX(people_vaccinated) AS people_vaccinated,
+    MAX(total_vaccinations) AS total_vaccinations,
+    MAX(people_vaccinated) / MAX(total_vaccinations) AS vaccination_ratio
+FROM CovidVaccinations
+WHERE people_vaccinated IS NOT NULL AND total_vaccinations IS NOT NULL
+GROUP BY continent, location
+ORDER BY vaccination_ratio DESC;
+
+
+-- Creating different views to store for later visualizations
+CREATE VIEW PercentVaccinated as
+SELECT
+    dea.continent,
+    dea.location,
+    dea.full_date,
+    dea.population,
+    vac.new_vaccinations,
+    SUM(vac.new_vaccinations) OVER (
+        PARTITION BY dea.location
+        ORDER BY dea.full_date
+    ) AS total_vaccines_per_day
+FROM coviddeaths dea
+JOIN covidvaccinations vac
+    ON dea.location = vac.location
+    AND dea.full_date = vac.vaccine_date
+WHERE dea.continent IS NOT NULL;
+
+CREATE VIEW HighestInfectionAndDeath as
+SELECT continent, POPULATION, MAX(TOTAL_CASES) as HighestInfectionCount, MAX((TOTAL_CASES/POPULATION))*100 AS CasePercentagePerLocation, MAX(TOTAL_DEATHS) as TotalDeaths, MAX((TOTAL_DEATHS/TOTAL_CASES))*100 as DeathPercentage
+FROM CovidDeaths
+GROUP BY continent, POPULATION
+HAVING MAX((TOTAL_CASES/POPULATION)) IS NOT NULL
+ORDER BY CasePercentagePerLocation DESC;
+
+CREATE VIEW TopVaccinatedCountries AS
+SELECT 
+    continent,
+    location,
+    MAX(people_vaccinated) AS people_vaccinated,
+    MAX(total_vaccinations) AS total_vaccinations,
+    MAX(people_vaccinated) / MAX(total_vaccinations) AS vaccination_ratio
+FROM CovidVaccinations
+WHERE people_vaccinated IS NOT NULL AND total_vaccinations IS NOT NULL
+GROUP BY continent, location
+ORDER BY vaccination_ratio DESC;
